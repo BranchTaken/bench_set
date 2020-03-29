@@ -1,0 +1,6 @@
+(library
+ (name Bench)
+ (libraries base Hemlock.Basis)
+ ;(preprocess (pps ppx_expect ppx_inline_test))
+ (synopsis "Set benchmarking library")
+ )

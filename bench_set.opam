@@ -1,0 +1,27 @@
+opam-version: "2.0"
+name: "bench_set"
+version: "0.0.0"
+synopsis: "Benchmarking program for OCaml-based set implementations"
+description: """
+bench_set is a command-line-driven benchmarking tool for several OCaml-based
+set implementations: OCaml's Stdlib.Set, Jane Street's Base.Set, and Hemlock's
+Basis.Set and Basis.Ordset.
+"""
+maintainer: "Jason Evans <je@branchtaken.net>"
+authors: ["Jason Evans"]
+license: "MIT"
+homepage: "https://github.com/BranchTaken/bench_set"
+bug-reports: "https://github.com/BranchTaken/bench_set/issues"
+dev-repo: "git+https://github.com/BranchTaken/bench_set"
+tags: [ "org:BranchTaken" ]
+depends: [
+  "ocaml" {>= "4.08.1"}
+  "dune" {>= "1.11"}
+  "topkg" {build}
+  "base" {>= "v0.13.1"}
+  "Hemlock" {>= "0.0.0"}
+]
+build: [
+  ["dune" "subst"] {pinned}
+  ["dune" "build" "-p" name "-j" jobs]
+]

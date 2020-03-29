@@ -1,0 +1,7 @@
+(executables
+ (names bench_set)
+ (libraries base Bench Hemlock.Basis))
+
+(install
+ (section bin)
+ (files (bench_set.exe as bench_set)))
