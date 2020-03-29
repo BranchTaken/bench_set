@@ -7,6 +7,7 @@ type t = Intset.t
 let length t = Intset.cardinal t
 let empty = Intset.empty
 let singleton = Intset.singleton
+let mem = Intset.mem
 let insert x t = Intset.add x t
 let remove x t = Intset.remove x t
 let equal = Intset.equal

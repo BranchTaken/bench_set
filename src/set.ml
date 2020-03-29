@@ -6,6 +6,7 @@ type t = (usize, Usize.cmper_witness) Set.t
 let length = Set.length
 let empty = Set.empty (module Usize)
 let singleton x = Set.singleton (module Usize) x
+let mem = Set.mem
 let insert = Set.insert
 let remove = Set.remove
 let equal = Set.equal

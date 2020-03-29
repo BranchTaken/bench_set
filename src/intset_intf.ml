@@ -4,6 +4,7 @@ module type S = sig
   val length: t -> int
   val empty: t
   val singleton: int -> t
+  val mem: int -> t -> bool
   val insert: int -> t -> t
   val remove: int -> t -> t
   val equal: t -> t -> bool

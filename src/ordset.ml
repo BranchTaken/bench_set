@@ -6,6 +6,7 @@ type t = (usize, Usize.cmper_witness) Ordset.t
 let length = Ordset.length
 let empty = Ordset.empty (module Usize)
 let singleton x = Ordset.singleton (module Usize) x
+let mem = Ordset.mem
 let insert = Ordset.insert
 let remove = Ordset.remove
 let equal = Ordset.equal
