@@ -2,8 +2,10 @@ module type S = sig
   type t
 
   val length: t -> int
+  val is_empty: t -> bool
   val empty: t
   val singleton: int -> t
+  val choose: t -> int
   val mem: int -> t -> bool
   val insert: int -> t -> t
   val remove: int -> t -> t

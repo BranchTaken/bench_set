@@ -4,8 +4,10 @@ open Basis
 type t = (usize, Usize.cmper_witness) Ordset.t
 
 let length = Ordset.length
+let is_empty = Ordset.is_empty
 let empty = Ordset.empty (module Usize)
 let singleton x = Ordset.singleton (module Usize) x
+let choose = Ordset.choose_hlt
 let mem = Ordset.mem
 let insert = Ordset.insert
 let remove = Ordset.remove

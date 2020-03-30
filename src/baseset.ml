@@ -3,8 +3,10 @@ open Base
 type t = (int, Int.comparator_witness) Set.t
 
 let length = Set.length
+let is_empty = Set.is_empty
 let empty = Set.empty (module Int)
 let singleton mem = Set.singleton (module Int) mem
+let choose = Set.choose_exn
 let mem x t = Set.mem t x
 let insert x t = Set.add t x
 let remove x t = Set.remove t x

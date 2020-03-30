@@ -5,8 +5,10 @@ module Intset = Set.Make(Int)
 type t = Intset.t
 
 let length t = Intset.cardinal t
+let is_empty = Intset.is_empty
 let empty = Intset.empty
 let singleton = Intset.singleton
+let choose = Intset.choose
 let mem = Intset.mem
 let insert x t = Intset.add x t
 let remove x t = Intset.remove x t
