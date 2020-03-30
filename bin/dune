@@ -1,6 +1,6 @@
 (executables
  (names bench_set)
- (libraries base Bench Hemlock.Basis))
+ (libraries base Bench Hemlock.Basis unix))
 
 (install
  (section bin)
