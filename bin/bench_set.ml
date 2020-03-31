@@ -388,56 +388,56 @@ let bench conf =
 
   let bench_mem op_reps x_min x_max set = begin
     let x_range = range_of_min_max x_min x_max in
-    for op_rep = 1 to op_reps do
+    for _op_rep = 1 to op_reps do
       let x = choose_base_range x_min x_range in
       ignore (Sys.opaque_identity (Intset.mem x set))
     done
   end in
 
   let bench_equal op_reps a b = begin
-    for op_rep = 1 to op_reps do
+    for _op_rep = 1 to op_reps do
       ignore (Sys.opaque_identity (Intset.equal a b))
     done
   end in
 
   let bench_subset op_reps a b = begin
-    for op_rep = 1 to op_reps do
+    for _op_rep = 1 to op_reps do
       ignore (Sys.opaque_identity (Intset.subset a b))
     done
   end in
 
   let bench_disjoint op_reps a b = begin
-    for op_rep = 1 to op_reps do
+    for _op_rep = 1 to op_reps do
       ignore (Sys.opaque_identity (Intset.disjoint a b))
     done
   end in
 
   let bench_union op_reps a b = begin
-    for op_rep = 1 to op_reps do
+    for _op_rep = 1 to op_reps do
       ignore (Sys.opaque_identity (Intset.union a b))
     done
   end in
 
   let bench_inter op_reps a b = begin
-    for op_rep = 1 to op_reps do
+    for _op_rep = 1 to op_reps do
       ignore (Sys.opaque_identity (Intset.inter a b))
     done
   end in
 
   let bench_diff op_reps a b = begin
-    for op_rep = 1 to op_reps do
+    for _op_rep = 1 to op_reps do
       ignore (Sys.opaque_identity (Intset.diff a b))
     done
   end in
 
-  let bench_fold op_reps pivot filter set = begin
-    for op_rep = 1 to op_reps do
+  let bench_fold op_reps set = begin
+    for _op_rep = 1 to op_reps do
       ignore (Sys.opaque_identity (Intset.fold set ~init:() ~f:(fun _ _ -> ())))
     done
   end in
 
   let bench_filter op_reps pivot filter set = begin
-    for op_rep = 1 to op_reps do
+    for _op_rep = 1 to op_reps do
       ignore (Sys.opaque_identity (Intset.filter set ~f:(fun x ->
         let open Cmp in
         match filter with
@@ -449,7 +449,7 @@ let bench conf =
   end in
 
   let bench_partition op_reps pivot filter set = begin
-    for op_rep = 1 to op_reps do
+    for _op_rep = 1 to op_reps do
       ignore (Sys.opaque_identity (Intset.partition_tf set ~f:(fun x ->
         let open Cmp in
         match filter with
@@ -513,7 +513,7 @@ let bench conf =
 
         (* Fold. *)
         if Set.mem Op.Fold conf.ops then
-          bench_fold conf.op_reps conf.pivot conf.filter a;
+          bench_fold conf.op_reps a;
 
         (* Filter. *)
         if Set.mem Op.Filter conf.ops then
