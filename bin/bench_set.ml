@@ -7,6 +7,10 @@ type b_rel_a =
   | Subset
   | Disjoint
 
+let b_rel_a_subset = function
+  | Subset -> true
+  | _ -> false
+
 type order =
   | Incr
   | Decr
@@ -26,6 +30,7 @@ module Op = struct
       | Diff
       | Fold
       | Filter
+      | Partition
 
     let to_usize = function
       | Mem -> 0
@@ -39,6 +44,7 @@ module Op = struct
       | Diff -> 8
       | Fold -> 9
       | Filter -> 10
+      | Partition -> 11
 
     let of_string = function
       | "mem" -> Mem
@@ -52,6 +58,7 @@ module Op = struct
       | "diff" -> Diff
       | "fold" -> Fold
       | "filter" -> Filter
+      | "partition" -> Partition
       | _ -> halt "Invalid op"
 
     let to_string = function
@@ -66,6 +73,7 @@ module Op = struct
       | Diff -> "diff"
       | Fold -> "fold"
       | Filter -> "filter"
+      | Partition -> "partition"
 
     let hash_fold t state =
       Usize.hash_fold (to_usize t) state
@@ -156,7 +164,7 @@ module Conf = struct
       ("-ops <op>[,<op>]*", "Operation(s) in {mem,insert,remove,");
       (                 "", "  equal,subset,disjoint,");
       (                 "", "  union,inter,diff,");
-      (                 "", "  fold,filter,remove}");
+      (                 "", "  fold,filter,partition}");
     ] in
     let option_width = List.fold options ~init:0 ~f:(fun w (option, _) ->
       max w (String.clength option)
@@ -166,6 +174,12 @@ module Conf = struct
       fprintf ppf "%-*s | %s" option_width option descr
     );
     fprintf ppf "@]@,@]"
+
+  let b_ops =
+    Set.of_list (module Op) [Equal; Subset; Disjoint; Union; Inter; Diff]
+
+  let need_b t =
+    Set.(length (inter t.ops b_ops)) > 0
 
   let validate t =
     let invalid msg = begin
@@ -183,6 +197,8 @@ module Conf = struct
       invalid "a_n > 0 && a_n - 1 > a_max - a_min";
     if t.b_n > 0 && t.b_n - 1 > t.b_max - t.b_min then
       invalid "b_n > 0 && b_n - 1 > b_max - b_min";
+    if need_b t && b_rel_a_subset t.b_rel_a && t.b_n > t.a_n then
+      invalid "need_b && && b_rel_a = Subset && b_n > a_n";
     t
 
   let of_argv argv =
@@ -252,13 +268,6 @@ end
 let init_random seed =
   Random.init seed
 
-let b_ops =
-  Set.of_list (module Op) [Equal; Subset; Disjoint; Union; Inter; Diff]
-
-let need_b conf =
-  let open Conf in
-  Set.(length (inter conf.ops b_ops)) > 0
-
 let range_of_min_max x_min x_max =
   let x_range = x_max - x_min in
   assert (x_range <= x_max + 1);
@@ -268,6 +277,17 @@ let choose_base_range base range =
   match range with
   | 0 -> base
   | _ -> base + (Random.int range)
+
+let str_of_ns ns =
+  let str = Usize.to_string ns in
+  let len = String.clength str in
+  String.of_list_rev (String.foldi
+    str ~init:[] ~f:(fun i accum cp ->
+      match i <> 0 && ((len - i) % 3 = 0) with
+      | true -> cp :: (Codepoint.of_char '_') :: accum
+      | false -> cp :: accum
+    )
+  )
 
 let bench conf =
   let open Conf in
@@ -313,6 +333,46 @@ let bench conf =
       end
   end in
 
+  let b_equal a = begin
+    Intset.fold a ~init:Intset.empty ~f:(fun b m -> Intset.insert m b)
+  end in
+
+  let b_subset b_n a a_n = begin
+    (* This method for sampling has the side effect that its insertion order
+       is stable, whereas shuffling-based sampling would allow random insertion
+       order. *)
+    let b, need, _ = Intset.fold a ~init:(Intset.empty, b_n, a_n)
+      ~f:(fun (b, need, have) m ->
+        let flt_need = Float.of_isize (Usize.to_isize need) in
+        let flt_have = Float.of_isize (Usize.to_isize have) in
+        let p = Float.(flt_need / flt_have) in
+        let probe = Random.float 1. in
+        match Float.(probe <= p) with
+        | true -> (Intset.insert m b), (pred need), (pred have)
+        | false -> b, need, (pred have)
+      )
+    in
+    assert (need = 0);
+    b
+  end in
+
+  let b_disjoint b_n b_min b_max a = begin
+    let rec fn need b_min b_range a b = begin
+      match need > 0 with
+      | false -> b
+      | true -> begin
+          let x = choose_base_range b_min b_range in
+          let b', need' = match (Intset.mem x a) || (Intset.mem x b) with
+            | true -> b, need
+            | false -> (Intset.insert x b), (pred need)
+          in
+          fn need' b_min b_range a b'
+        end
+    end in
+    let b_range = range_of_min_max b_min b_max in
+    fn b_n b_min b_range a Intset.empty
+  end in
+
   let bench_remove set = begin
     let rec fn set = begin
       match Intset.is_empty set with
@@ -323,28 +383,99 @@ let bench conf =
           fn set'
         end
     end in
-    fn set
+    Sys.opaque_identity (fn set)
   end in
 
   let bench_mem op_reps x_min x_max set = begin
     let x_range = range_of_min_max x_min x_max in
     for op_rep = 1 to op_reps do
       let x = choose_base_range x_min x_range in
-      let _ = Intset.mem x set in
-      ()
+      ignore (Sys.opaque_identity (Intset.mem x set))
     done
   end in
 
-  let rec rep conf i reps_tdelta = begin
+  let bench_equal op_reps a b = begin
+    for op_rep = 1 to op_reps do
+      ignore (Sys.opaque_identity (Intset.equal a b))
+    done
+  end in
+
+  let bench_subset op_reps a b = begin
+    for op_rep = 1 to op_reps do
+      ignore (Sys.opaque_identity (Intset.subset a b))
+    done
+  end in
+
+  let bench_disjoint op_reps a b = begin
+    for op_rep = 1 to op_reps do
+      ignore (Sys.opaque_identity (Intset.disjoint a b))
+    done
+  end in
+
+  let bench_union op_reps a b = begin
+    for op_rep = 1 to op_reps do
+      ignore (Sys.opaque_identity (Intset.union a b))
+    done
+  end in
+
+  let bench_inter op_reps a b = begin
+    for op_rep = 1 to op_reps do
+      ignore (Sys.opaque_identity (Intset.inter a b))
+    done
+  end in
+
+  let bench_diff op_reps a b = begin
+    for op_rep = 1 to op_reps do
+      ignore (Sys.opaque_identity (Intset.diff a b))
+    done
+  end in
+
+  let bench_fold op_reps pivot filter set = begin
+    for op_rep = 1 to op_reps do
+      ignore (Sys.opaque_identity (Intset.fold set ~init:() ~f:(fun _ _ -> ())))
+    done
+  end in
+
+  let bench_filter op_reps pivot filter set = begin
+    for op_rep = 1 to op_reps do
+      ignore (Sys.opaque_identity (Intset.filter set ~f:(fun x ->
+        let open Cmp in
+        match filter with
+        | Lt -> x < pivot
+        | Gt -> x > pivot
+        | Eq -> not_reached ()
+      )))
+    done
+  end in
+
+  let bench_partition op_reps pivot filter set = begin
+    for op_rep = 1 to op_reps do
+      ignore (Sys.opaque_identity (Intset.partition_tf set ~f:(fun x ->
+        let open Cmp in
+        match filter with
+        | Lt -> x < pivot
+        | Gt -> x > pivot
+        | Eq -> not_reached ()
+      )))
+    done
+  end in
+
+  let rec rep conf i reps_tsum = begin
     match i < conf.set_reps with
-    | false -> reps_tdelta
+    | false -> reps_tsum
     | true -> begin
         (* Insert. *)
         let rep_t0 = Unix.gettimeofday () in
         let a = bench_insert conf.insert_order conf.a_n conf.a_min conf.a_max in
-        let _b = match need_b conf with
-          | true ->
-            bench_insert conf.insert_order conf.b_n conf.b_min conf.b_max
+        let b = match Conf.need_b conf with
+          | true -> begin
+              match conf.b_rel_a with
+              | Independent ->
+                bench_insert conf.insert_order conf.b_n conf.b_min conf.b_max
+              | Equal -> b_equal a
+              | Subset -> b_subset conf.b_n a conf.a_n
+              | Disjoint -> b_disjoint conf.b_n conf.b_min conf.b_max a
+            end
           | false -> Intset.empty
         in
         let rep_t0 = match Set.mem Op.Insert conf.ops with
@@ -356,8 +487,41 @@ let bench conf =
         if Set.mem Op.Mem conf.ops then
           bench_mem conf.op_reps conf.a_min conf.a_max a;
 
-        (* XXX Add ops: Equal, Subset, Disjoint, Union, Inter, Diff,
-           Fold, Filter. *)
+        (* Equal. *)
+        if Set.mem Op.Equal conf.ops then
+          bench_equal conf.op_reps a b;
+
+        (* Subset. *)
+        if Set.mem Op.Subset conf.ops then
+          bench_subset conf.op_reps a b;
+
+        (* Disjoint. *)
+        if Set.mem Op.Disjoint conf.ops then
+          bench_disjoint conf.op_reps a b;
+
+        (* Union. *)
+        if Set.mem Op.Union conf.ops then
+          bench_union conf.op_reps a b;
+
+        (* Inter. *)
+        if Set.mem Op.Inter conf.ops then
+          bench_inter conf.op_reps a b;
+
+        (* Diff. *)
+        if Set.mem Op.Diff conf.ops then
+          bench_diff conf.op_reps a b;
+
+        (* Fold. *)
+        if Set.mem Op.Fold conf.ops then
+          bench_fold conf.op_reps conf.pivot conf.filter a;
+
+        (* Filter. *)
+        if Set.mem Op.Filter conf.ops then
+          bench_filter conf.op_reps conf.pivot conf.filter a;
+
+        (* Partition. *)
+        if Set.mem Op.Partition conf.ops then
+          bench_partition conf.op_reps conf.pivot conf.filter a;
 
         (* Remove. *)
         if Set.mem Op.Remove conf.ops then
@@ -365,24 +529,19 @@ let bench conf =
 
         let rep_t1 = Unix.gettimeofday () in
         let rep_tdelta = Float.(rep_t1 - rep_t0) in
-        let reps_tdelta' = Float.(reps_tdelta + rep_tdelta) in
-        rep conf (succ i) reps_tdelta'
+        let reps_tsum' = Float.(reps_tsum + rep_tdelta) in
+        rep conf (succ i) reps_tsum'
       end
   end in
-  let tdelta = rep conf 0 0. in
+  let tsum = rep conf 0 0. in
 
   let flt_set_reps = Float.of_isize (Usize.to_isize conf.set_reps) in
-  let s_per_set_rep = Float.(tdelta / flt_set_reps) in
-  let ns_per_set_rep = Usize.of_isize
-    Float.(to_isize (s_per_set_rep * 1_000_000_000.)) in
-  Printf.printf "ns/set_rep: %u\n" ns_per_set_rep;
-
+  let s_per_set_rep = Float.(tsum / flt_set_reps) in
   let flt_op_reps = Float.of_isize (Usize.to_isize conf.op_reps) in
   let s_per_op_rep = Float.(s_per_set_rep / flt_op_reps) in
   let ns_per_op_rep = Usize.of_isize
     Float.(to_isize (s_per_op_rep * 1_000_000_000.)) in
-  Printf.printf "ns/op_rep: %u\n" ns_per_op_rep;
-
+  Printf.printf "ns/op_rep: %s %u\n" (str_of_ns ns_per_op_rep) ns_per_op_rep;
   ()
 
 let main () =
