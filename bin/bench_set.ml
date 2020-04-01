@@ -265,6 +265,9 @@ module Conf = struct
     validate (fn defaults args)
 end
 
+let gc_volume () =
+  Usize.of_isize (Float.to_isize (Gc.allocated_bytes ()))
+
 let init_random seed =
   Random.init seed
 
@@ -278,7 +281,7 @@ let choose_base_range base range =
   | 0 -> base
   | _ -> base + (Random.int range)
 
-let str_of_ns ns =
+let str_of_int ns =
   let str = Usize.to_string ns in
   let len = String.clength str in
   String.of_list_rev (String.foldi
@@ -460,12 +463,13 @@ let bench conf =
     done
   end in
 
-  let rec rep conf i reps_tsum = begin
+  let rec rep conf i reps_tsum reps_vsum = begin
     match i < conf.set_reps with
-    | false -> reps_tsum
+    | false -> reps_tsum, reps_vsum
     | true -> begin
         (* Insert. *)
         let rep_t0 = Unix.gettimeofday () in
+        let rep_v0 = gc_volume () in
         let a = bench_insert conf.insert_order conf.a_n conf.a_min conf.a_max in
         let b = match Conf.need_b conf with
           | true -> begin
@@ -478,9 +482,9 @@ let bench conf =
             end
           | false -> Intset.empty
         in
-        let rep_t0 = match Set.mem Op.Insert conf.ops with
-          | true -> rep_t0
-          | false -> Unix.gettimeofday ()
+        let rep_t0, rep_v0 = match Set.mem Op.Insert conf.ops with
+          | true -> rep_t0, rep_v0
+          | false -> (Unix.gettimeofday ()), (gc_volume ())
         in
 
         (* Mem. *)
@@ -527,21 +531,42 @@ let bench conf =
         if Set.mem Op.Remove conf.ops then
           bench_remove a;
 
+        (* Accumulate time/memory stats. *)
         let rep_t1 = Unix.gettimeofday () in
+        let rep_v1 = gc_volume () in
+
         let rep_tdelta = Float.(rep_t1 - rep_t0) in
         let reps_tsum' = Float.(reps_tsum + rep_tdelta) in
-        rep conf (succ i) reps_tsum'
+
+        let rep_vdelta = rep_v1 - rep_v0 in
+        let reps_vsum' = reps_vsum + rep_vdelta in
+
+        rep conf (succ i) reps_tsum' reps_vsum'
       end
   end in
-  let tsum = rep conf 0 0. in
+  let tsum, vsum = rep conf 0 0. 0 in
 
+  (* Report stats. *)
   let flt_set_reps = Float.of_isize (Usize.to_isize conf.set_reps) in
   let s_per_set_rep = Float.(tsum / flt_set_reps) in
+  let ns_per_set_rep = Usize.of_isize
+    Float.(to_isize (s_per_set_rep * 1_000_000_000.)) in
+  Printf.printf "ns/set_rep: %s %u\n"
+    (str_of_int ns_per_set_rep) ns_per_set_rep;
+
+  let v_per_set_rep = vsum / conf.set_reps in
+  Printf.printf "alloc_volume/set_rep: %s %u\n"
+    (str_of_int v_per_set_rep) v_per_set_rep;
+
   let flt_op_reps = Float.of_isize (Usize.to_isize conf.op_reps) in
   let s_per_op_rep = Float.(s_per_set_rep / flt_op_reps) in
   let ns_per_op_rep = Usize.of_isize
     Float.(to_isize (s_per_op_rep * 1_000_000_000.)) in
-  Printf.printf "ns/op_rep: %s %u\n" (str_of_ns ns_per_op_rep) ns_per_op_rep;
+  Printf.printf "ns/op_rep: %s %u\n" (str_of_int ns_per_op_rep) ns_per_op_rep;
+
+  let v_per_op_rep = v_per_set_rep / conf.op_reps in
+  Printf.printf "alloc_volume/op_rep: %s %u\n"
+    (str_of_int v_per_op_rep) v_per_op_rep;
   ()
 
 let main () =
